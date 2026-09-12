@@ -90,15 +90,6 @@ void addEnd(char** end,int* capa,int* pos,char* c){
 	*pos+=len;
 }
 
-//int getIndex(char c,char* list[],int list_s){
-//
-//	for(int i=0; i< list_s;){
-//		if(c==*(*(list+i))) return i;
-//	i++;
-//	}
-//	return -1;
-//}
-
 int checkSupression(char* pos,char* end){
 
 	if(pos+1>=end) return 0;
