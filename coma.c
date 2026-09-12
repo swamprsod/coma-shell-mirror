@@ -76,7 +76,7 @@ int isOpAc(char* c){
 
 	if(*(c+1)!='\0')
 		if(isOperator(*c)==1 
-		   && isAction(*(c+1))==1) return 1;
+		  && isAction(*(c+1))==1) return 1;
 
 	return 0;
 }
