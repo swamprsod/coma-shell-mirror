@@ -4,6 +4,7 @@
 /*\	 hm: ./LICENSE			\*/
 /*\	 wikipedia.org/wiki/Ithkuil	\*/
 
+	#define SIGMEOW "\nmeow\n"
 	#define COMA '%'
 	#define LISP
 //	#define TEST
@@ -52,16 +53,16 @@ typedef struct{
 op* ops=NULL;
 int ops_s=0;
 
-static char splitt[500];
+static char splitt[512];
 
 static char* shell=NULL;
 static char* ps1=NULL;
 static char* shellfalse=NULL;
-static char prefix[8500]="";
-static char suffix[8500]="";
-static char sprefix[8500]="";
-static char ssuffix[8500]="";
-static char lastcmd[8500]="";
+static char prefix[16384]="";
+static char suffix[16384]="";
+static char sprefix[16384]="";
+static char ssuffix[16384]="";
+static char lastcmd[16384]="";
 
 int
 isOperator(char c){
@@ -323,7 +324,7 @@ parseConf(char* comarc){
 	FILE* f=fopen(comarc,"r");
 	if(f==NULL){ return; }
 
-	char fget[1200];
+	char fget[2048];
 	int shelltrue=0;
 	size_t sblen=0;
 
@@ -580,10 +581,9 @@ char*
 fileCreate(const char* c,int sos){
 
 	static DIR* o=NULL;
-	static char first[10000];
-	static char tfirst[10000];
-	static char partdir[8000];
-	static char fulldir[8000];
+	static char first[16384];
+	static char partdir[8192];
+	static char fulldir[8192];
 	static char* partname;
 	static size_t len;
 
@@ -628,10 +628,10 @@ fileCreate(const char* c,int sos){
 		if(strncmp(name,partname,len)!=0){
 			continue;
 		}
-		char full[8000];
+		char full[16384];
 		snprintf(full,sizeof(full),"%s%s",fulldir,name);
 
-		char mb[8000];
+		char mb[32768];
 		if(!isDir(full)){
 			snprintf(mb,sizeof(mb),"%s%s%s",first,partdir,name);
 		}
@@ -700,7 +700,7 @@ execCommand(char* c){
 		return;
 	}
 	if(pid==0){
-		char full[10000];
+		char full[16384];
 		signal(SIGINT,SIG_DFL);
 		signal(SIGQUIT,SIG_DFL);
 		snprintf(full,sizeof(full),"%s%s",shellfalse? shellfalse:"",c);
@@ -969,10 +969,11 @@ sig(int a){
 
 	(void)a;
 	if(coma){
+		write(1,SIGMEOW,6);
 		rl_free_line_state();
 		rl_cleanup_after_signal();
 		rl_reset_after_signal();
-		printf("%s\n",ps1);
+		write(1,ps1,strlen(ps1));
 	}
 }
 
@@ -1026,7 +1027,7 @@ rl_attempted_completion_function=complete;
 rl_completion_append_character='\0';
 rl_completer_word_break_characters=splitt;
 
-char histpath[4000]="";
+char histpath[4096]="";
 if(home!=NULL){
 	snprintf(histpath,sizeof(histpath),"%s/tmptest.txt",home);
 	read_history(histpath);
