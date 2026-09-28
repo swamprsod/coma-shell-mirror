@@ -995,13 +995,6 @@ if(!cfg
 if(cfg){
 	parseConf(cfg);
 }
-if(argc >=2
-  && strcmp(*(argv+1),"--init")==0){
-	if(shellfalse!=NULL){
-		fputs(shellfalse,stdout);
-	}
-	return 0;
-}
 
 if(!ps1){
 	char* e=getenv("COMA_PS1");
