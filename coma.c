@@ -17,6 +17,7 @@
 	#include <sys/wait.h>
 	#include <fcntl.h>
 	#include <dirent.h>
+	#include <sys/syscall.h>
 
 	
 	#ifdef __OpenBSD__
@@ -968,9 +969,8 @@ void
 sig(int a){
 
 	(void)a;
+	write(1,SIGMEOW,sizeof(SIGMEOW)-1);
 	if(coma){
-		write(1,SIGMEOW,6);
-		rl_free_line_state();
 		rl_cleanup_after_signal();
 		rl_reset_after_signal();
 		write(1,ps1,strlen(ps1));
