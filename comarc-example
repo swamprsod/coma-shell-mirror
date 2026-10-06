@@ -1,0 +1,24 @@
+0h00:/bin/sh
+0p00:\001\033[37m\002;\001\033[0m\002 \001\033[35m\002coma\001\033[0m\002\001\033[37m\002<\001\033[0m\002 
+
+0c,0:&&
+0d?0:|grep -i 
+eg+0:|wl-copy
+0s^0:cat 
+0d!0:|sed s/
+0d{0:|head -n 
+0d}0:|tail -n
+Eg!!:|sh
+0d:0:echo "
+Sg#0:doas 
+
+sgt1:echo "
+egT1:"
+0de0:%t1%T1
+
+!shell<
+v() { nvim "$@"; }
+alias :q=clear
+alias m=make
+alias ll="ls -la"
+!end shell

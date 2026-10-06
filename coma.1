@@ -1,0 +1,278 @@
+.Dd August 28, 2026
+.Dt COMA 1
+.Os DragonFly
+.Sh NAME
+.Nm coma
+.Nd write-only shell preprocessor
+.Sh SYNOPSIS
+.Ss OUTSIDE coma
+.Nm
+.Op Fl f Ns = Ns \&' Ns Ar <mod><type><a1><a2>:<subst> Ns \&'
+.Fl c Ns = Ns \&' Ns Ar command Ns \&'
+.Ss INSIDE coma
+.Nm
+.Fl f Ns = Ns Ar op
+.Nm
+.Fl a
+.Nm
+.Fl d Ns = Ns Ar N
+.Sh DESCRIPTION
+.Nm
+is a write-only semi-Thue shell preprocessor for POSIX shells intended for interactive use.
+.Ss Basic concepts
+.Bl -tag -width "action1 & action2"
+.It Ar subst
+the string that ends up in the command before execution
+.It Ar action1 No & Ar action2
+the pattern that will turn into
+.Ar subst
+if it occurs in the input
+.It Ar operator No ( Ns Ar op Ns )
+.Ar action1 No \&(and) Ar action2 No \-> Ar subst Ns \&.
+See
+.Sx SEMANTICS
+for details.
+.It Ar type
+how the
+.Ar operator
+behaves
+.It Ar mod
+modifier for global operators
+.It Ar OCMA
+the escape that invokes an
+.Ar operator Ns \&.
+Initially it is
+.Ar % Ns \&,
+and
+.Ar %
+is used throughout the examples below.
+.It Ar supression
+.Ar %\e
+suppresses the operator to its left. Involution is also possible
+.El
+.Ss Compilation
+.Bl -tag -width "coma el keaaaaaaaays kke ksk"
+.It #define SIGMEOW \&"\enmsg\en\&"
+sigint msg
+.It #define OCMA 'char'
+the 
+.Ar OCMA
+.It #define COMA_EL_KEY \&"key\&"
+alernative keybind to type
+.Ar OCMA Ns
+\&. Refer to editrc(5edit)'s 
+.Sx bind Ns
+ -s
+.It #define ITA int
+iteration limit for recursive 
+.Ar operator Ns
+s
+.It #define TEST
+ifdef, will send debug messages
+.It #define WCOLORS
+ifdef, will use colors in
+.Ar p
+decoded via strunvis(3)
+.It #define WUTF8
+ifdef, will use UTF8
+.El
+.Sh SEMANTICS
+.Ss Type
+.Bl -tag -width "d (default)"
+.It Ar d No (default)
+installs at the same position in the command where it appears
+.It Ar c No (chain)
+splits the command into segments. Setting this type up can be slightly problematic.
+.It Ar g No (global)
+automatically places
+.Ar subst
+in a specific part of the command
+.Bl -tag -width "mod" -compact 
+.It Sy MOD
+.Bl -tag -width "s (start,segment)" -compact -offset 2n
+.It Ar s No (start,segment)
+places
+.Ar subst
+at the beginning of the segment
+.It Ar e No (end,segment)
+places
+.Ar subst
+at the end of the segment
+.It Ar S No (start,whole)
+places
+.Ar subst
+at the beginning of the whole command
+.It Ar E No (end,whole)
+places
+.Ar subst
+at the end of the whole command
+.El
+.El
+.Pp
+.It Ar s No (single)
+differs from
+.Ar d
+in that
+.Ar action1
+and
+.Ar action2
+are xor with
+.Ql 0
+and no
+.Ar %
+is required.
+
+.El
+Also type
+.Ar g
+is always behave like modified type
+.Ar d
+so it requirs
+.Ar OCMA
+to be invoked.
+.Ss Format
+Overall, the syntax of one
+.Ar operator
+is as follows:
+.Pp
+.Bd -ragged -offset 4n
+.No < Ns
+.Ar mod Ns
+.No >< Ns
+.Ar type Ns
+.No >< Ns
+.Ar action1 Ns
+.No >< Ns
+.Ar action2 Ns
+.No >:< Ns
+.Ar subst Ns
+.No > Ns
+.Ed
+.Pp
+.Bd -ragged -offset -2n
+A segment is a part of the command separated from the rest by an operator of type
+.Ar c
+or
+.Ql | 
+or
+.Ql || 
+or
+.Ql & 
+or
+.Ql && 
+or
+.Ql \&;
+.El
+.Ed
+.Ar global
+operators of type
+.Ar s
+or
+.Ar e
+place the corresponding
+.Ar subst
+per segment, in the order they were set in the command.
+.Pp
+.Ql Ar 0
+in
+.Ar action2 
+nand in
+.Ar action1 
+denotes the absence of an action. It is not recommended to write
+.Ql 0
+in
+.Ar action1 Ns
+\&.
+There are also two special types:
+.Bl -tag -width "p (prompt)"
+.It Ar h No (shell)
+the shell used by
+.Nm
+.It Ar p No (prompt)
+sets PS1 to
+.Ar subst
+decoded via 
+.Ar strunvis Ns
+(3)
+.El
+.Pp
+For these two operators, everything except
+.Ar type
+and
+.Ar subst
+is always '0'. If
+.Ar OCMA
+is written twice (%%), its
+.Ar subst
+will hold the previous command executed by
+.Ar h Ns
+\&.
+.Sh CONFIGURATION
+The configuration file is
+.Pa $HOME/.comarc .
+This is where your operators go.
+.Pp
+There is also a section for what
+.Ar h
+receives.
+It starts with
+.Bd -literal -offset indent
+!shell<
+.Ed
+.Pp
+and ends with
+.Bd -literal -offset indent
+!end shell
+.Ed
+.Sh FILES
+.Bl -tag -width "jdfjdsdddsdkjaction1"
+.It Pa $HOME/.comarc
+config
+.It Pa $HOME/.comahistory
+history
+.El
+.Sh EXAMPLES
+Config:
+.Bd -literal -offset indent
+0h00:/bin/sh
+0p00:;  
+
+0d?0:|sed s/a/oo/g
+sgt0:echo "
+egt1:"%?
+Egt2:|rev
+
+0d#0:%t%t1%t2
+
+!shell<
+alias a="echo amoeba"
+!end shell
+.Ed
+.Pp
+Will do the following:
+.Bd -literal -offset indent
+; abca%#bc
+cboocboo
+; %#abc
+cboo
+; coma -a
+0       :  0 d ?0 : |sed s/a/oo/g
+1       :  s g t0 : echo "
+2       :  e g t1 : "|sed s/aa/oo/g
+3       :  E g t2 : |rev
+4       :  0 d #0 : %t%t1%t2
+; a
+amoeba
+;
+.Ed
+.Sh SEE ALSO
+.Xr sh 1 ,
+.Xr editrc 5edit ,
+.Xr editline 3edit ,
+.Xr strunvis 3
+.Sh AUTHORS
+phiamoeba 
+.No < Ns
+.Ar phiamoeba@disroot.org Ns
+>
+

@@ -5,9 +5,15 @@
 /*\	 wikipedia.org/wiki/Ithkuil	\*/
 
 	#define SIGMEOW "\nmeow\n"
-	#define COMA '%'
-	#define LISP
+	#define OCMA '%'
+	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
+	#define ITA 100
+	#define VERSION "coma-1.0(2)-cd"
+
 //	#define TEST
+	#define PRE
+	#define WCOLORS
+	#define WUTF8
 
 	#include <stdio.h>
 	#include <stdlib.h>
@@ -16,19 +22,30 @@
 	#include <unistd.h>
 	#include <sys/wait.h>
 	#include <fcntl.h>
+	#include <poll.h>
 	#include <dirent.h>
 	#include <sys/syscall.h>
-
-	
+	#include <setjmp.h>
+	#include <termios.h>
+	#include <limits.h>
+	#ifdef WCOLORS
+		#ifdef __linux__
+			#include <bsd/vis.h>
+		#endif
+	#endif
 	#ifdef __OpenBSD__
 		#include <readline/readline.h>
 	#else
 		#include <editline/readline.h>
 	#endif
+	#ifdef WUTF8
+		#include <locale.h>
+	#endif
 	
 #define ACLIST_S(aua) ((size_t)((char*)(&aua+1)-(char*)&aua)/sizeof(*((aua)+0)))
 
 volatile sig_atomic_t coma=0;
+volatile static sigjmp_buf jmp;
 
 void
 nop(void){}
@@ -36,10 +53,8 @@ nop(void){}
 void
 incr(int* ij,int a){ *ij+=a; }
 
-#ifdef LISP
-char* 
-mkString(char* c);
-#endif
+void
+versionIs(void){ printf("coma %s\n",VERSION); }
 
 typedef struct{
 
@@ -50,36 +65,91 @@ typedef struct{
 	char* subst;
 }op;
 
+#ifdef PRE
+char* mkStrD(char* c);char* iterMkStrD(char* c);void mkStrG(char* c);char* mkString(char* c);char* cTypeInflate(char* s,op* ctype);char* whatAffix(char mod);char* mergeAffix(char* ogrizok);char* findSep(char* p,int* seplen);void mkTypeCsegment_t2_1(char* full);void doRepeat(char* cdr,op* ctype);void run05(char* line);
+#endif
 
 op* ops=NULL;
 int ops_s=0;
 
-static char splitt[512];
+static struct termios termiossv;
+static int savetio=0;
 
 static char* shell=NULL;
 static char* ps1=NULL;
 static char* shellfalse=NULL;
+static char splitt[512];
 static char prefix[16384]="";
 static char suffix[16384]="";
 static char sprefix[16384]="";
 static char ssuffix[16384]="";
 static char lastcmd[16384]="";
+static char comahistory[4096]="";
+static int globb=0;
+static int comac=0;
+static int stdinstdin=-1;
+
+void
+historySave(void){
+
+	if(*comahistory!='\0'){
+		write_history(comahistory);
+	}
+}
+
+//void
+//arcList(char** u1,int u2,int u3){
+//
+//	(void)u1;
+//	(void)u2;
+//	(void)u3;
+//}
+
+void
+printOps(void){
+
+	for(int i=0;i< ops_s;){
+		op* o=ops+i;
+		printf("%d\t:  %c %c %c%c : %s\n",i,o->mod? o->mod
+							  : '0',o->type,o->action1?
+								       o->action1 : '0',o->action2?
+										       o->action2 : '0',o->subst);
+		i++;
+	}
+}
 
 int
 isOperator(char c){
 
-	if(c==COMA){ return 1; }
+	if(c==OCMA){ return 1; }
 	else{ return 0; }
 }
 
 void
-comaerr(int a){
+comaerr(int a,char* what){
 
 	switch(a){
 		case 1: fprintf(stderr,"\ncoma!strdup $PATH: segfault\n");
+			usleep(969099);
 			exit(1);
 		case 2: fprintf(stderr,"\ncoma!fork: ??: impossible\n");
+			usleep(1090000);
 			exit(1);
+		case 3: fprintf(stderr,"\ncoma!execCoc: ??: impossible\n");
+			usleep(1090000);
+			exit(1);
+		case 4: fprintf(stderr,"coma!what is: ??: %s\n",what);
+			exit(1);
+		case 5: fprintf(stderr,"coma!rmOp: operator doesnt exist! %d\n",(int*)what);
+			return;
+		case 6: fprintf(stderr,"coma!rmOp: operator doesnt exist! %s\n",what);
+			return;
+		case 7: fprintf(stderr,"coma!config: ~/.comarc not found\n");
+			usleep(1090000);
+			comaerr(8,NULL);
+			usleep(969099);
+			exit(1);
+		case 8: fprintf(stderr,"coma!what is: ??: 0xfffffffffffff000\n");
 	}
 }
 
@@ -143,6 +213,37 @@ isgAction(char c1,char c2,int* len){
 	return NULL;
 }
 
+void
+rmOp(int j){
+
+	if((j< 0)
+	  || (j >=ops_s)){
+		comaerr(5,(char*)j);
+		return;
+	}
+	free((*(ops+j)).subst);
+	for(int i=j;i< ops_s-1;){
+		*(ops+i)=*(ops+i+1);
+		i++;
+	}
+	ops_s--;
+	if(ops_s >0){
+		ops=realloc(ops,ops_s*sizeof(op));
+	}
+	else{
+		free(ops);
+		ops=NULL;
+	}
+	globb=0;
+	for(int i=0;i< ops_s;){
+		if((*(ops+i)).type=='g'){
+			globb=1;
+			break;
+		}
+		i++;
+	}
+}
+
 op*
 isSingle(char c){
 
@@ -165,43 +266,6 @@ isSeparator(void){
 		j++;
 	}
 	return NULL;
-}
-
-int
-isLisp(char* c){
-
-	char* end=c+strlen(c);
-	char* rn=c;
-	while(*rn){
-		if((*rn==COMA)
-		  && rn+1<end){
-			char c1=*(rn+1);
-			char c2=(rn+2< end)? *(rn+2):'\0';
-			if((c2!='\0')
-			  && (checkSupression(rn+3,end)==0)){
-				for(int j=0;j< ops_s;){
-					op* o=ops+j;
-					if((o->type=='g')
-					  && o->mod!=0
-					  && o->action1==c1
-					  && o->action2==c2){ return 1; }
-					j++;
-				}
-			}
-			if(checkSupression(rn+2,end)==0){
-				for(int i=0;i< ops_s;){
-					op* o=ops+i;
-					if((o->type=='g')
-					  && o->mod!=0
-					  && o->action1==c1
-					  && o->action2=='\0'){ return 1; }
-					i++;
-				}
-			}
-		}
-		rn++;
-	}
-	return 0;
 }
 
 void
@@ -251,6 +315,9 @@ parseLine(char* c){
 	if(type=='p'){
 		free(ps1);
 		ps1=strdup(subst);
+	#ifdef WCOLORS
+		strunvis(ps1,ps1);
+	#endif
 		free(subst);
 		return;
 	}
@@ -275,48 +342,28 @@ parseLine(char* c){
 		action2='\0';
 	}
 
-#ifdef LISP
-	if(isLisp(subst)){
-		addOp(mod,type,action1,action2,subst);
-		free(subst);
-		return;
-	}
-	*prefix='\0';
-	*suffix='\0';
-	*sprefix='\0';
-	*ssuffix='\0';
-	char* mksubst=mkString(subst);
-	if((*prefix!='\0')
-	  || (*suffix!='\0')
-	  || (*sprefix!='\0')
-	  || (*ssuffix!='\0')){
-		int mkslen=strlen(mksubst);
-		int lenps=strlen(prefix);
-		int lenss=strlen(suffix);
-		int lenpc=strlen(sprefix);
-		int lensc=strlen(ssuffix);
-		char* full=malloc(lenpc+lenps+mkslen+lenss+lensc+1);
-		if(full){
-			memcpy(full,sprefix,lenpc);
-			memcpy(full+lenpc,prefix,lenps);
-			memcpy(full+lenpc+lenps,mksubst,mkslen);
-			memcpy(full+lenpc+lenps+mkslen,suffix,lenss);
-			memcpy(full+lenpc+lenps+mkslen+lenss,ssuffix,lensc);
-			*(full+lenpc+lenps+mkslen+lenss+lensc)='\0';
-			free(mksubst);
-			mksubst=full;
-		}
-	}
-	*prefix='\0';
-	*suffix='\0';
-	*sprefix='\0';
-	*ssuffix='\0';
+	char* mksubst=mkStrD(subst);
 	addOp(mod,type,action1,action2,mksubst);
 	free(mksubst);
-#else
-	addOp(mod,type,action1,action2,subst);
-#endif
-	free(subst);
+}
+
+int
+comaLambda(const char* lambda){
+
+	char* lam=strdup(lambda);
+	if(lam==NULL){ return -1; }
+	parseLine(lam);
+	free(lam);
+
+	for(int i=0;i< ops_s;){
+		if((*(ops+i)).type=='g'){
+			globb=1;
+			break;
+		}
+		i++;
+	}
+	fprintf(stdout,"coma!lambda %s\nop index: %d\n",lambda,ops_s-1);
+	return 0;
 }
 
 void
@@ -330,12 +377,11 @@ parseConf(char* comarc){
 	size_t sblen=0;
 
 	while(fgets(fget,sizeof(fget),f)){
-
-		if(strncmp(fget,"!!!shell",8)==0){
+		if(strcmp(fget,"!shell<\n")==0){
 			shelltrue=1;
 			continue;
 		}
-		if(strncmp(fget,"!!!",3)==0){
+		if(strcmp(fget,"!end shell\n")==0){
 			shelltrue=0;
 			continue;
 		}
@@ -347,7 +393,6 @@ parseConf(char* comarc){
 			*(shellfalse+sblen)='\0';
 			continue;
 		}
-
 		parseLine(fget);
 	}
 	fclose(f);
@@ -367,77 +412,138 @@ addEnd(char** end,int* capa,int* pos,char* c){
 	*pos+=len;
 }
 
+char*
+whatAffix(char mod){
+
+	if(mod=='S'){ return sprefix; }
+	if(mod=='E'){ return ssuffix; }
+	if(mod=='s'){ return prefix; }
+	if(mod=='e'){ return suffix; }
+	return NULL;
+}
+
 void
 strncatGlobal(op* o){
 
-	char* raw=o->subst;
-	if(isLisp(raw)){
-		char* mkraw=mkString(raw);
-		if(mkraw){
-			free(mkraw);
+	char* raw=strdup(o->subst);
+	if(raw==NULL){ return; }
+	if(strchr(raw,OCMA)){
+		mkStrG(raw);
+	}
+	char* inflated=cTypeInflate(raw,isSeparator());
+	free(raw);
+	if(inflated==NULL){ return; }
+	char* affix=whatAffix(o->mod);
+	if(affix!=NULL){
+		size_t lenaf=strlen(affix);
+		size_t len=strlen(inflated);
+		if(lenaf+len+1<= 16384){
+			memcpy(affix+lenaf,inflated,len+1);
 		}
-		return;
 	}
-	if(o->mod=='S'){
-		strncat(sprefix,raw,sizeof(sprefix)-strlen(sprefix)-1);
-	}
-	else
-	if(o->mod=='E'){
-		strncat(ssuffix,raw,sizeof(ssuffix)-strlen(ssuffix)-1);
-	}
-	else
-	if(o->mod=='s'){
-		strncat(prefix,raw,sizeof(prefix)-strlen(prefix)-1);
-	}
-	else
-	if(o->mod=='e'){
-		strncat(suffix,raw,sizeof(suffix)-strlen(suffix)-1);
-	}
+	free(inflated);
 }
 
 char*
-mkString(char* c){
+cTypeInflate(char* c,op* ctype){
+
+	if(ctype==NULL){ return strdup(c); }
+
+	size_t lenc=strlen(ctype->subst);
+	size_t len=strlen(c);
+	char* out=malloc(len*(lenc >1? lenc : 1)+1);
+	if(out==NULL){ return strdup(c); }
+
+	char* w=out;
+	for(char* mv=c;*mv;){
+		if(isOperator(*mv)
+		  && *(mv+1)=='\\'){
+			mv+=2;
+			continue;
+		}
+		if(*mv==ctype->action1
+		  && checkSupression(mv+1,c+len)==0){
+			memcpy(w,ctype->subst,lenc);
+			w+=lenc;
+			mv++;
+			continue;
+		}
+		*w++=*mv++;
+	}
+	*w='\0';
+	return out;
+}
+
+char*
+mkStrD(char* c){
+
+	char* cag=strdup(c);
+	if(cag==NULL){ return NULL; }
+	int i=0;
+	while(i< ITA){
+		char* next=iterMkStrD(cag);
+		if(next==NULL){
+			free(cag);
+			return NULL;
+		}
+		if(strcmp(next,cag)==0){
+			free(next);
+			return cag;
+		}
+		free(cag);
+		cag=next;
+		i++;
+	}
+	return cag;
+}
+
+char*
+iterMkStrD(char* c){
 
 	int pos=0;
 	int len=strlen(c);
-	int capa=len*3;
+	int capa=len*3+16;
 	char* string=malloc(capa);
 	char* end=c+len;
 	int i=0;
 
-	while(i<len){
-		if(isOperator(*(c+i))
-		  && (i+1< len)
-		  && (*(c+i+1)=='\\')){
-			i+=2;
-			continue;
-		}
-
+	while(i< len){
 		if(isOperator(*(c+i))
 		  && (i+1< len)){
 			char c1=*(c+i+1);
 			char c2=(i+2< len)? *(c+i+2):'\0';
-			int mlen=0;
-			op* o=isgAction(c1,c2,&mlen);
+			if((c1==OCMA)
+			  && (*lastcmd!='\0')
+			  && (checkSupression(c+i+1,end)==0)
+			  && (checkSupression(c+i+2,end)==0)){
+				addEnd(&string,&capa,&pos,lastcmd);
+				i+=2;
+				continue;
+			}
+			int whatlen=0;
+			op* o=isgAction(c1,c2,&whatlen);
 			if((o!=NULL)
-			  && checkSupression(c+i+1+mlen,end)==0){
+			  && checkSupression(c+i+1+whatlen,end)==0){
 				if(o->type=='g'){
-					strncatGlobal(o);
+					char tmp[4];
+					memcpy(tmp,c+i,1+whatlen);
+					*(tmp+1+whatlen)='\0';
+					addEnd(&string,&capa,&pos,tmp);
+					i+=1+whatlen;
+					continue;
 				}
-				else
 				if(o->type=='d'){
 					addEnd(&string,&capa,&pos,o->subst);
+					i+=1+whatlen;
+					continue;
 				}
-				i+=1+mlen;
-				continue;
 			}
 		}
 
-	
-		op* so=isSingle(*(c+i));
-		if((so!=NULL)
+		op* sici=isSingle(*(c+i));
+		if((sici!=NULL)
 		  && checkSupression(c+i+1,end)==0){
-			addEnd(&string,&capa,&pos,so->subst);
+			addEnd(&string,&capa,&pos,sici->subst);
 			i+=1;
 			continue;
 		}
@@ -447,6 +553,44 @@ mkString(char* c){
 	}
 	*(string+pos)='\0';
 	return string;
+}
+
+void
+mkStrG(char* c){
+
+	char* end=c+strlen(c);
+	char* mv=c;
+	char* w=c;
+
+	while(*mv){
+		if(isOperator(*mv)
+		  && (mv+1< end)){
+			char c1=*(mv+1);
+			char c2=(mv+2< end)? *(mv+2):'\0';
+			int whatlen=0;
+			op* o=isgAction(c1,c2,&whatlen);
+			if((o!=NULL)
+			  && o->type=='g'
+			  && checkSupression(mv+1+whatlen,end)==0){
+				strncatGlobal(o);
+				mv+=1+whatlen;
+				continue;
+			}
+		}
+		*w++=*mv++;
+	}
+	*w='\0';
+}
+
+char*
+mkString(char* c){
+
+	char* mkD=mkStrD(c);
+	if(mkD!=NULL
+	  && globb){
+		mkStrG(mkD);
+	}
+	return mkD;
 }
 
 
@@ -478,7 +622,7 @@ int
 isDir(char* path){
 
 	int a=open(path,O_RDONLY
-		  |O_DIRECTORY);
+		  | O_DIRECTORY);
 	if(a< 0){ return 0; }
 	close(a);
 	return 1;
@@ -489,7 +633,7 @@ isBreak(char c){
 
 	if((c==' ')
 	  || c=='\t'
-	  || c==COMA
+	  || c==OCMA
 	  || c=='\\'){ return 1; }
 
 	for(int i=0;i< ops_s;){
@@ -527,8 +671,8 @@ splitSlash(const char* pathh,char* dir,char** c,size_t dirs){
 		*c=slash+1;
 	}
 	else{
-	*(dir+0)='\0';
-	*c=pathh;
+	*dir='\0';
+	*c=(char*)pathh;
 	}
 }
 
@@ -550,7 +694,7 @@ commandCreate(const char* c,int sos){
 		sum=0;
 		amo=0;
 		size_t len=strlen(c);
-		char* path=getenv("PATH")? strdup(getenv("PATH")):(comaerr(1),NULL);
+		char* path=getenv("PATH")? strdup(getenv("PATH")):(comaerr(1,NULL),NULL);
 		if(path!=NULL){
 			char* dir=strtok(path,":");
 			while(dir!=NULL){
@@ -652,10 +796,14 @@ buildBreaks(void){
 	*(splitt+a++)=' ';
 	*(splitt+a++)='\t';
 	*(splitt+a++)='\n';
-	*(splitt+a++)=COMA;
+	*(splitt+a++)=OCMA;
 	*(splitt+a++)='\\';
 	for(int i=0;i< ops_s;){
-		*(splitt+a++)=(*(ops+i)).action1;
+		if((*(ops+i)).type=='s'
+		  && (*(ops+i)).action1
+		  && (*(ops+i)).action2=='\0'){
+			*(splitt+a++)=(*(ops+i)).action1;
+		}
 		i++;
 	}
 	*(splitt+a)='\0';
@@ -665,7 +813,7 @@ int
 isSingleOrPrefix(char* c){
 
 	if(strchr(c,'~')){ return 1; }
-	if(strchr(c,COMA)){ return 1; }
+	if(strchr(c,OCMA)){ return 1; }
 
 	for(int i=0;i< ops_s;){
 		if((*(ops+i)).type=='s'
@@ -679,191 +827,373 @@ char**
 complete(const char* c,int start,int end){
 
 	(void)end;
-
-	if(isSingleOrPrefix((char*)c)!=0)
-	return rl_completion_matches(c,fileCreate);
+	char** korm;
+	int iscmd=1;
 	for(int i=start-1;i >=0;){
-		char lbu=*(rl_line_buffer+i);
-		if((lbu!=' ')
-		  && (lbu!='\t'))
-			return rl_completion_matches(c,fileCreate);
+		if((*(rl_line_buffer+i)!=' ')
+		  && (*(rl_line_buffer+i)!='\t')){
+			iscmd=0;
+			break;
+		}
 		i--;
 	}
-	return rl_completion_matches(c,commandCreate);
+	if(isSingleOrPrefix((char*)c)){
+		iscmd=0;
+	}
+	if(strchr(c,'/')
+	  || (*c=='.')){
+		iscmd=0;
+	}
+	korm=rl_completion_matches(c,iscmd? commandCreate:fileCreate);
+	if(korm==NULL){ return NULL; }
+	int n=0;
+	while(*(korm+n)){
+		n++;
+	}
+	if(n==1){ return korm; }
+	char* p=strdup(*korm);
+	for(int i=1;i< n;){
+		int j=0;
+		while(*(p+j)
+		     && (*(*(korm+i)+j))
+		     && (*(p+j)==*(*(korm+i)+j))){
+			j++;
+		}
+		*(p+j)='\0';
+		i++;
+	}
+	for(int i=0;i< n;){
+		free(*(korm+i));
+		i++;
+	}
+	free(korm);
+	if(strlen(p)<= strlen(c)){
+		free(p);
+		rl_attempted_completion_over=1;
+		return NULL;
+	}
+	korm=malloc(2*sizeof(char*));
+	*korm=p;
+	*(korm+1)=NULL;
+	return korm;
+}
+
+int
+insertOCMA(int count,int key){
+
+	(void)count;
+	(void)key;
+	rl_insert_text("%");
+	return 0;
+}
+
+int
+execCoc(char* full){
+
+	pid_t pid=fork();
+	if(pid< 0){
+		return -1;
+	}
+	if(pid==0){
+		signal(SIGINT,SIG_DFL);
+		signal(SIGQUIT,SIG_DFL);
+		execl(shell,shell,"-c",full,NULL);
+		_exit(1);
+	}
+	int status;
+	waitpid(pid,&status,0);
+	return status;
 }
 
 void
 execCommand(char* c){
 
-	pid_t pid=fork();
-	if(pid< 0){
-		comaerr(2);
-		return;
-	}
-	if(pid==0){
-		char full[16384];
-		signal(SIGINT,SIG_DFL);
-		signal(SIGQUIT,SIG_DFL);
-		snprintf(full,sizeof(full),"%s%s",shellfalse? shellfalse:"",c);
-		execl(shell,shell,"-c",full,NULL);
-		_exit(0);
-	}
-	int status;
-	waitpid(pid,&status,0);
-}
+	char full[16384];
+	char* pre=shellfalse? shellfalse : "";
 
-char*
-afterRepeat(char* c){
-
-	char* p=c;
-	while((*p==' ')
-	     || *p=='\t'){
-		p++;
-	}
-	if(*p==COMA
-	  && *(p+1)==COMA){
-		char* end=c+strlen(c);
-		if(checkSupression(p+1,end)==0
-		  && checkSupression(p+2,end)==0){ return p+2; }
-	}
-	return NULL;
-}
-
-void
-run1(char* c){
-
-	char* cdr=afterRepeat(c);
-	if(cdr){
-		if(*lastcmd!='\0'){
-			*prefix='\0';
-			*suffix='\0';
-			char* cdrstr=mkString(cdr);
-			if(cdrstr){
-				int lenp=strlen(prefix);
-				int lenlast=strlen(lastcmd);
-				int lencdr=strlen(cdrstr);
-				int lens=strlen(suffix);
-				char* full=malloc(lenp+lenlast+lencdr+lens+1);
-				if(full){
-					memcpy(full,prefix,lenp);
-					memcpy(full+lenp,lastcmd,lenlast);
-					memcpy(full+lenp+lenlast,cdrstr,lencdr);
-					memcpy(full+lenp+lenlast+lencdr,suffix,lens);
-					*(full+lenp+lenlast+lencdr+lens)='\0';
-					execCommand(full);
-					free(full);
-				}
-				free(cdrstr);
-			}
-			*prefix='\0';
-			*suffix='\0';
+	if(comac){
+		snprintf(full,sizeof(full),"%s%s",pre,c);
+#ifdef TEST
+	fprintf(stderr,"\n2:: %s\n",c);
+#endif
+	if(execCoc(full)< 0){
+			comaerr(2,NULL);
 		}
 		return;
 	}
+
+	int fd[2];
+	if(pipe(fd)!=0){
+		comaerr(3,NULL);
+		return;
+	}
+
+	pid_t pid=fork();
+	if(pid< 0){
+		close(*fd);
+		close(*(fd+1));
+		comaerr(2,NULL);
+		return;
+	}
+	if(pid==0){
+		signal(SIGINT,SIG_DFL);
+		signal(SIGQUIT,SIG_DFL);
+		close(*fd);
+		if(*(fd+1)!=9){
+			dup2(*(fd+1),9);
+			if(stdinstdin >=0){
+				dup2(stdinstdin,0);
+				close(stdinstdin);
+			}
+			close(*(fd+1));
+		}
+#ifdef TEST
+	fprintf(stderr,"\n2:: %s\n",c);
+#endif
+	snprintf(full,sizeof(full),"%s%s\npwd >&9\nexec 9>&-",pre,c);
+		execl(shell,shell,"-c",full,NULL);
+		_exit(1);
+	}
+	if(stdinstdin>=0){
+		close(stdinstdin);
+		stdinstdin=-1;
+	}
+
+	close(*(fd+1));
+
+	int status;
+	waitpid(pid,&status,0);
+	char patha[PATH_MAX+2];
+	ssize_t readsum=0;
+	struct pollfd pfd={
+		*fd,
+		POLLIN,
+		0
+	};
+	if(poll(&pfd,1,100) >0){
+		readsum=read(*fd,patha,sizeof(patha)-1);
+		if(readsum< 0){
+			readsum=0;
+		}
+	}
+	*(patha+readsum)='\0';
+	close(*fd);
+
+	while((readsum >0)
+	     && (*(patha+readsum-1)=='\n'
+	     || *(patha+readsum-1)=='\r'
+	     || *(patha+readsum-1)==' ')){
+		*(patha+--readsum)='\0';
+	}
+	if((readsum >0)
+	  && (*patha=='/')
+	  && (isDir(patha))
+	  && (chdir(patha)==0)){
+		char* old=getenv("PWD");
+		if((old!=NULL)
+		  && strcmp(old,patha)!=0){
+			setenv("OLDPWD",old,1);
+		}
+		setenv("PWD",patha,1);
+	}
+}
+
+char*
+mergeAffix(char* ogrizok){
+
+	int a=0;
+	int lensp=strlen(sprefix);
+	int lenp=strlen(prefix);
+	int lentmp=strlen(ogrizok);
+	int lens=strlen(suffix);
+	int lenss=strlen(ssuffix);
+
+	char* full=malloc(lensp+lenp+lentmp+lens+lenss+1);
+	if(full==NULL){ return NULL; }
+	memcpy(full+a,sprefix,lensp);
+	a+=lensp;
+	memcpy(full+a,prefix,lenp);
+	a+=lenp;
+	memcpy(full+a,ogrizok,lentmp);
+	a+=lentmp;
+	memcpy(full+a,suffix,lens);
+	a+=lens;
+	memcpy(full+a,ssuffix,lenss);
+	a+=lenss;
+	*(full+a)='\0';
 
 	*prefix='\0';
 	*suffix='\0';
 	*sprefix='\0';
 	*ssuffix='\0';
-	char* result=mkString(c);
-	if(result){
-		if((*prefix!=0)
-		  || (*suffix!=0)){
-			int lenp=strlen(prefix);
-			int lens=strlen(suffix);
-			int lencdr=strlen(result);
-			char* full=malloc(lenp+lencdr+lens+1);
-			if(full){
-				memcpy(full,prefix,lenp);
-				memcpy(full+lenp,result,lencdr);
-				memcpy(full+lenp+lencdr,suffix,lens);
-				*(full+lenp+lencdr+lens)='\0';
-				free(result);
-				result=full;
-			}
-			*prefix='\0';
-			*suffix='\0';
+	return full;
+}
+
+char*
+findSep(char* p,int* seplen){
+
+	*seplen=0;
+	for(char* q=p;*q;){
+		if((*q=='|')
+		  && (*(q+1)=='|')){
+			*seplen=2;
+			return q;
 		}
-		if((*sprefix!=0)
-		  || (*ssuffix!=0)){
-			int lenp=strlen(sprefix);
-			int lens=strlen(ssuffix);
-			int lencdr=strlen(result);
-			char* full=malloc(lenp+lencdr+lens+1);
-			if(full){
-				memcpy(full,sprefix,lenp);
-				memcpy(full+lenp,result,lencdr);
-				memcpy(full+lenp+lencdr,ssuffix,lens);
-				*(full+lenp+lencdr+lens)='\0';
-				free(result);
-				result=full;
-			}
-			*sprefix='\0';
-			*ssuffix='\0';
+		if((*q=='&')
+		  && *(q+1)=='&'){
+			*seplen=2;
+			return q;
 		}
-		snprintf(lastcmd,sizeof(lastcmd),"%s",result);
-		execCommand(result);
-		free(result);
+		if((*q=='|')
+		  || *q==';'
+		  || *q=='&'){
+			*seplen=1;
+			return q;
+		}
+		q++;
 	}
+	return NULL;
+}
+
+int
+isExit(char* p){
+
+	while((*p==' ')
+	     || (*p=='\t')){
+		p++;
+	}
+	if(strncmp(p,"exit",4)!=0){ return 0; }
+	p+=4;
+	while((*p==' ')
+	     || (*p=='\t')){
+		p++;
+	}
+	return *p=='\0';
+}
+
+char*
+isComa(char* p){
+
+	while((*p==' ')
+	     || (*p=='\t')){
+		p++;
+	}
+	if(strncmp(p,"coma",4)!=0){ return NULL; }
+	p+=4;
+	if((*p!='\0')
+	  && (*p!=' ')
+	  && (*p!='\t')){ return NULL; }
+	return p;
 }
 
 void
-run05(char* line){
+comaRun(char* p){
 
-	op* chain=isSeparator();
-	if(chain==NULL){
-		run1(line);
-		return;
+	while((*p)
+	     && (*p==' '
+	     || *p=='\t')){
+		p++;
 	}
-	*sprefix='\0';
-	*ssuffix='\0';
-	char* end=line+strlen(line);
-	char* p=line;
+	while(*p){
+		while((*p==' ')
+		     || (*p=='\t')){
+			p++;
+		}
+		if(strncmp(p,"-a",2)==0
+		  && ((*(p+2)=='\0')
+		  || (*(p+2)==' ')
+		  || (*(p+2)=='\t'))){
+			printOps();
+			p+=2;
+			continue;
+		}
+		if(strncmp(p,"-v",2)==0
+		  && ((*(p+2)=='\0')
+		  || (*(p+2)==' ')
+		  || (*(p+2)=='\t'))){
+			versionIs();
+			p+=2;
+			continue;
+		}
+		if(strncmp(p,"-f=",3)==0){
+			char* end=p+3;
+			while(*end){
+				if(*end==','){
+					char* q=end+1;
+					while((*q==' ')
+					     || (*q=='\t')){
+						q++;
+					}
+					if((*q=='-')
+					  || (*q=='\0')){
+						break;
+					}
+				}
+				end++;
+			}
+			char saved=*end;
+			*end='\0';
+			comaLambda(p+3);
+			*end=saved;
+			if(saved=='\0'){ break; }
+			p=end+1;
+			continue;
+		}
+		if(strncmp(p,"-d=",3)==0){
+			char* end=p;
+			while((*end)
+			     && (*end!=' ')
+			     && *end!='\t'){
+				end++;
+			}
+			char saved=*end;
+			*end='\0';
+			if((*(p+3) >='0')
+			  && (*(p+3)<= '9')){
+				rmOp(atoi(p+3));
+			}
+			else{
+				char p3p3[5]={*(p+3),'.','.','.','\0'};
+				comaerr(6,p3p3);
+			}
+			*end=saved;
+			p=end;
+			continue;
+		}
+		break;
+	}
+}
+
+int
+stdoutWhat(char* p){
+
+	while((*p==' ')
+	     || (*p=='\t')){
+		p++;
+	}
+	if(*p!='-'){ return 0; }
+	p++;
+	if((*p=='a')
+	  || (*p=='v')){
+		p++;
+		return *p=='\0';
+	}
+	return 0;
+}
+
+void
+mkTypeCsegment_t2_1(char* full){
+
+	char* p=full;
 	int olen=0;
-	int ocapa=strlen(line)*3+1;
+	int ocapa=strlen(full)*3+16;
 	char* out=malloc(ocapa);
-	if(!out){ return; }
+	if(out==NULL){ return; }
+	*out='\0';
 
 	while(*p){
-		char* sep=NULL;
 		int seplen=0;
-		int truec=0;
-
-		for(char* q=p;*q;){
-			if(isOperator(*q)
-			  && *(q+1)=='\\'){
-				q++;
-				continue;
-			}
-			if(*q==chain->action1
-			  && checkSupression(q+1,end)==0){
-				sep=q;
-				seplen=1;
-				truec=1;
-				break;
-			}
-			if(*q=='|'
-			  && *(q+1)=='|'){
-				sep=q;
-				seplen=2;
-				break;
-			}
-			if(*q=='&'
-			  && *(q+1)=='&'){
-				sep=q;
-				seplen=2;
-				break;
-			}
-			if(*q=='|'
-			  || *q==';'
-			  || *q=='&'){
-				sep=q;
-				seplen=1;
-				break;
-			}
-			q++;
-		}
-
+		char* sep=findSep(p,&seplen);
 		char s1=0;
 		char s2=0;
 		if(sep){
@@ -874,95 +1204,106 @@ run05(char* line){
 			}
 			*sep='\0';
 		}
-		char* cdr=afterRepeat(p);
-		if(cdr){
-			if(*lastcmd!='\0'){
-				*prefix='\0';
-				*suffix='\0';
-				char* cdrstr=mkString(cdr);
-				if(*prefix!=0){
-					addEnd(&out,&ocapa,&olen,prefix);
-				}
-				addEnd(&out,&ocapa,&olen,lastcmd);
-				if(cdrstr){
-					addEnd(&out,&ocapa,&olen,cdrstr);
-					free(cdrstr);
-				}
-				if(*suffix!=0){
-					addEnd(&out,&ocapa,&olen,suffix);
-				}
-				*prefix='\0';
-				*suffix='\0';
+		if(isExit(p)){
+			if(olen >0){
+				*(out+olen)='\0';
+				snprintf(lastcmd,sizeof(lastcmd),"%s",out);
+				execCommand(out);
 			}
+			free(out);
+			exit(0);
 		}
-		else{
-			*prefix='\0';
-			*suffix='\0';
-			char* r=mkString(p);
-
-			if(*prefix!=0){
-				addEnd(&out,&ocapa,&olen,prefix);
+		char* cp=isComa(p);
+		if(cp!=NULL){
+			if(olen >0){
+				*(out+olen)='\0';
+				snprintf(lastcmd,sizeof(lastcmd),"%s",out);
+				execCommand(out);
+				olen=0;
+				*out='\0';
 			}
-			if(r!=NULL){
-				addEnd(&out,&ocapa,&olen,r);
-				free(r);
+			if((sep!=NULL)
+			  && (s1=='|')
+			  && (seplen==1)
+			  && stdoutWhat(cp)){
+				int pfd[2];
+				if(pipe(pfd)==0){
+					int saved=dup(1);
+					dup2(*(pfd+1),1);
+					close(*(pfd+1));
+					comaRun(cp);
+					fflush(stdout);
+					dup2(saved,1);
+					close(saved);
+					stdinstdin=*pfd;
+				}
+				else{
+					comaRun(cp);
+				}
 			}
-			if(*suffix!=0){
-				addEnd(&out,&ocapa,&olen,suffix);
+			else{
+				comaRun(cp);
 			}
-			*prefix='\0';
-			*suffix='\0';
+			if(sep==NULL){
+				break;
+			}
+			*sep=s1;
+			if(seplen==2){
+				*(sep+1)=s2;
+			}
+			p=sep+seplen;
+			continue;
 		}
-
-		if(!sep){
+		addEnd(&out,&ocapa,&olen,p);
+		if(sep==NULL){
 			break;
 		}
 		*sep=s1;
 		if(seplen==2){
 			*(sep+1)=s2;
 		}
-
-		if(truec){
-			addEnd(&out,&ocapa,&olen,chain->subst);
+		char tmp[3]={s1,'\0','\0'};
+		if(seplen==2){
+			*(tmp+1)=s2;
 		}
-		else{
-			char tmp[3]={*sep,'\0','\0'};
-			if(seplen==2){
-				*(tmp+1)=*(sep+1);
-			}
-			addEnd(&out,&ocapa,&olen,tmp);
-		}
-
+		addEnd(&out,&ocapa,&olen,tmp);
 		p=sep+seplen;
 	}
-
-	if(*sprefix!=0
-	  || *ssuffix!=0){
-		int lenp=strlen(sprefix);
-		int lens=strlen(ssuffix);
-		while(ocapa< olen+lenp+lens+1){
-			ocapa*=2;
-		}
-		out=realloc(out,ocapa);
-		memmove(out+lenp,out,olen+1);
-		memcpy(out,sprefix,lenp);
-		memcpy(out+lenp+olen,ssuffix,lens);
-		olen+=lenp+lens;
-		*(out+olen)='\0';
-		*sprefix='\0';
-		*ssuffix='\0';
-	}
-
 	*(out+olen)='\0';
-#ifdef TEST
-	printf("\n0:: %s :::: out",out);
-	printf("\n1:: %s :::: lastcmd\n\n",lastcmd);
-#endif
 	if(olen >0){
 		snprintf(lastcmd,sizeof(lastcmd),"%s",out);
+		execCommand(out);
 	}
-	execCommand(out);
+	if(stdinstdin >=0){
+		close(stdinstdin);
+		stdinstdin=-1;
+	}
 	free(out);
+}
+
+void
+run05(char* line){
+
+	op* ctype=isSeparator();
+
+	char* inflated=mkStrD(line);
+	if(inflated==NULL){ return; }
+
+	if(globb){
+		mkStrG(inflated);
+	}
+	char* full=mergeAffix(inflated);
+	free(inflated);
+	if(full==NULL){ return; }
+
+	if(ctype!=NULL){
+		char* t=cTypeInflate(full,ctype);
+		free(full);
+		full=t;
+	}
+
+	mkTypeCsegment_t2_1(full);
+	free(full);
 }
 
 void
@@ -971,84 +1312,120 @@ sig(int a){
 	(void)a;
 	write(1,SIGMEOW,sizeof(SIGMEOW)-1);
 	if(coma){
-		rl_cleanup_after_signal();
-		rl_reset_after_signal();
-		write(1,ps1,strlen(ps1));
+		siglongjmp(jmp,1);
 	}
 }
 
-float
+size_t
 main(int argc,char** argv){
 
-signal(SIGINT,sig);
-signal(SIGQUIT,sig);
+	setenv("SHELL","coma",1);
+#ifdef WUTF8
+	setlocale(LC_ALL,"");
+#endif
+	signal(SIGINT,sig);
+	signal(SIGQUIT,sig);
 
-char* home=getenv("HOME");
-char* cfg=getenv("COMA_CONFIG");
-char cfgpath[4096];
-
-if(!cfg
-  && home){
+	char cfgpath[4096];
+	char* home=getenv("HOME");
+	if(!home){
+		comaerr(7,NULL);
+	}
 	snprintf(cfgpath,sizeof(cfgpath),"%s/.comarc",home);
-	cfg=cfgpath;
-}
-if(cfg){
-	parseConf(cfg);
-}
+	if(access(cfgpath,F_OK)!=0){
+		comaerr(7,NULL);
+	}
+	parseConf(cfgpath);
+	for(int i=1;i< argc;){		
+		char* a=*(argv+i);
+		if(strncmp(a,"-f=",3)==0){
+			comaLambda(a+3);
+			i++;
+			continue;
+		}
+		if(strncmp(a,"-c=",3)==0){
+			comac=1;
+			run05(a+3);
+			return 0;
+		}
+		if(strcmp(a,"-v")==0){
+			versionIs();
+			return 0;
+		}
+		if(strcmp(a,"-a")==0){
+			printOps();
+			return 0;
+		}
+		if(strncmp(a,"-d=",3)==0){
+			if((*(a+3)< '0')
+			  || (*(a+3) >'9')){
+				comaerr(4,a);
+			}
+			rmOp(atoi(a+3));
+			i++;
+			continue;
+		}
+		comaerr(4,a);
+	}
+	for(int i=0;i< ops_s;i++){
+		if((*(ops+i)).type=='g'){
+			globb=1;
+			break;
+		}
+	}
+	if(!ps1){
+		ps1=strdup("/bin/sh < coma < ");
+	}
 
-if(!ps1){
-	char* e=getenv("COMA_PS1");
-	ps1=strdup(e? e : "; coma< ");
-}
+	if(!shell){
+		shell=strdup("/bin/sh");
+	}
 
-if(!shell){
-	char* e=getenv("COMA_SH");
-	shell=strdup((e && *e)? e : "/bin/sh");
-}
+	buildBreaks();
+	rl_catch_signals=0;
+	rl_initialize();
+	rl_parse_and_bind(COMA_EL_KEY);
+	if(tcgetattr(STDIN_FILENO,&termiossv)==0){
+		savetio=1;
+	}
+	rl_attempted_completion_function=complete;
+	rl_completion_query_items=16384;
+	rl_completion_append_character='\0';
+	rl_basic_word_break_characters=splitt;
 
-
-if(argc>=3
-  && strcmp(*(argv+1),"-c")==0){
-	run05(*(argv+2));
+	if(home!=NULL){
+		snprintf(comahistory,sizeof(comahistory),"%s/.comahistory.txt",home);
+		read_history(comahistory);
+		atexit(historySave);
+	}
+	char* line;
+	for(;;){
+		if(sigsetjmp(jmp,1)){
+			coma=0;
+			if(savetio){
+				tcsetattr(STDIN_FILENO,TCSANOW,&termiossv);
+			}
+			rl_cleanup_after_signal();
+			rl_reset_after_signal();
+			continue;
+		}
+		coma=1;
+		line=readline(ps1);
+		coma=0;
+		if(!line){
+			if(feof(stdin)){
+				break;
+			}
+			continue;
+		}
+		if(*line!='\0'){
+			add_history(line);
+			run05(line);
+		}
+		else{
+			write(1,"\n",1);
+		}
+		free(line);
+	}
 	return 0;
-}
-
-buildBreaks();
-rl_catch_signals=0;
-rl_initialize();
-rl_attempted_completion_function=complete;
-rl_completion_append_character='\0';
-rl_completer_word_break_characters=splitt;
-
-char histpath[4096]="";
-if(home!=NULL){
-	snprintf(histpath,sizeof(histpath),"%s/tmptest.txt",home);
-	read_history(histpath);
-}
-char* line;
-for(;;){
-	coma=1;
-	line=readline(ps1);
-	coma=0;
-	if(!line){
-		if(feof(stdin)){
-			break;
-		}
-		continue;
-	}
-	if(*line!='\0'){
-		if(strcmp(line,"exit")==0){
-			free(line);
-			break;
-		}
-		add_history(line);
-		run05(line);
-	}
-	free(line);
-}
-
-if(home!=NULL){
-	write_history(histpath);
-}
-return 0.5;
 }
