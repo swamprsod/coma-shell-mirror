@@ -488,11 +488,17 @@ mkStrD(char* c){
 		}
 		if(strcmp(next,cag)==0){
 			free(next);
-			return cag;
+			break;
 		}
 		free(cag);
 		cag=next;
 		i++;
+	}
+	for(char* p=cag;*p;){
+		if(*p=='\x01'){
+			*p=OCMA;
+		}
+		p++;
 	}
 	return cag;
 }
@@ -509,21 +515,35 @@ iterMkStrD(char* c){
 
 	while(i< len){
 		if(isOperator(*(c+i))
+		  && (i+1< len)
+		  && *(c+i+1)=='\\'){
+			i+=2;
+			continue;
+		}
+		if(isOperator(*(c+i))
 		  && (i+1< len)){
 			char c1=*(c+i+1);
 			char c2=(i+2< len)? *(c+i+2):'\0';
-			if((c1==OCMA)
-			  && (*lastcmd!='\0')
-			  && (checkSupression(c+i+1,end)==0)
-			  && (checkSupression(c+i+2,end)==0)){
-				addEnd(&string,&capa,&pos,lastcmd);
-				i+=2;
-				continue;
-			}
 			int whatlen=0;
 			op* o=isgAction(c1,c2,&whatlen);
-			if((o!=NULL)
-			  && checkSupression(c+i+1+whatlen,end)==0){
+			if(o!=NULL){
+				if(checkSupression(c+i+1+whatlen,end)){
+					char tmp[4];
+					memcpy(tmp,c+i,1+whatlen);
+					*(tmp+1+whatlen)='\0';
+					*tmp='\x01';
+					addEnd(&string,&capa,&pos,tmp);
+					i+=1+whatlen;
+					continue;
+				}
+				if((whatlen==1)
+				  && (c1==OCMA)
+				  && (i+2< len)
+				  && (*(c+i+2)=='\\')){
+					addEnd(&string,&capa,&pos,"\x01");
+					i+=3;
+					continue;
+				}
 				if(o->type=='g'){
 					char tmp[4];
 					memcpy(tmp,c+i,1+whatlen);
@@ -539,7 +559,6 @@ iterMkStrD(char* c){
 				}
 			}
 		}
-
 		op* sici=isSingle(*(c+i));
 		if((sici!=NULL)
 		  && checkSupression(c+i+1,end)==0){
@@ -1222,6 +1241,7 @@ mkTypeCsegment_t2_1(char* full){
 				olen=0;
 				*out='\0';
 			}
+			snprintf(lastcmd,sizeof(lastcmd),"%s",p);
 			if((sep!=NULL)
 			  && (s1=='|')
 			  && (seplen==1)
@@ -1284,8 +1304,14 @@ mkTypeCsegment_t2_1(char* full){
 void
 run05(char* line){
 
+	if((ops_s >0)
+	  && ((*ops).type=='d')
+	  && ((*ops).action1==OCMA)
+	  && ((*ops).action2=='\0')){
+		free((*ops).subst);
+		(*ops).subst=strdup(lastcmd);
+	}
 	op* ctype=isSeparator();
-
 	char* inflated=mkStrD(line);
 	if(inflated==NULL){ return; }
 
@@ -1296,10 +1322,13 @@ run05(char* line){
 	free(inflated);
 	if(full==NULL){ return; }
 
-	if(ctype!=NULL){
-		char* t=cTypeInflate(full,ctype);
-		free(full);
-		full=t;
+	for(int i=0;i< ops_s;){
+		if((*(ops+i)).type=='c'){
+			char* t=cTypeInflate(full,ops+i);
+			free(full);
+			full=t;
+		}
+		i++;
 	}
 
 	mkTypeCsegment_t2_1(full);
@@ -1319,6 +1348,7 @@ sig(int a){
 size_t
 main(int argc,char** argv){
 
+	addOp(0,'d',OCMA,'\0',"");
 	setenv("SHELL","coma",1);
 #ifdef WUTF8
 	setlocale(LC_ALL,"");
