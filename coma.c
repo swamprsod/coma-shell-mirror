@@ -8,7 +8,7 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.0(2)-cd"
+	#define VERSION "coma-1.1(0)-0rop"
 
 //	#define TEST
 	#define PRE
