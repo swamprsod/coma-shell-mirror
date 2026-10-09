@@ -8,7 +8,7 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.1(0)-0rop"
+	#define VERSION "coma-1.2(1)-supcom"
 
 //	#define TEST
 	#define PRE
@@ -494,12 +494,20 @@ mkStrD(char* c){
 		cag=next;
 		i++;
 	}
-	for(char* p=cag;*p;){
-		if(*p=='\x01'){
-			*p=OCMA;
+	char* w=cag;
+	for(char* r=cag;*r;){
+		if(*r=='\x01'){
+			*w++=OCMA;
+			r++;
+			continue;
 		}
-		p++;
+		if(*r=='\x02'){
+			r++;
+			continue;
+		}
+		*w++=*r++;
 	}
+	*w='\0';
 	return cag;
 }
 
@@ -514,12 +522,36 @@ iterMkStrD(char* c){
 	int i=0;
 
 	while(i< len){
+		if(*(c+i)=='\x02'){
+			if(i+1< len){
+				char tmp[3]={'\x02',*(c+i+1),'\0'};
+				addEnd(&string,&capa,&pos,tmp);
+				i+=2;
+			}
+			else{
+				i++;
+			}
+			continue;
+		}
 		if(isOperator(*(c+i))
 		  && (i+1< len)
 		  && *(c+i+1)=='\\'){
-			i+=2;
-			continue;
-		}
+			int isc=0;
+			if(i>=1){
+				for(int j=0;j< ops_s;){
+					if((*(ops+j)).type=='c'
+					  && (*(ops+j)).action1==*(c+i-1)){
+						isc=1;
+						break;
+					}
+					j++;
+				}
+			}
+			if(!isc){
+				i+=2;
+				continue;
+			}
+		}		
 		if(isOperator(*(c+i))
 		  && (i+1< len)){
 			char c1=*(c+i+1);
@@ -560,9 +592,14 @@ iterMkStrD(char* c){
 			}
 		}
 		op* sici=isSingle(*(c+i));
-		if((sici!=NULL)
-		  && checkSupression(c+i+1,end)==0){
-			addEnd(&string,&capa,&pos,sici->subst);
+		if(sici!=NULL){
+			if(checkSupression(c+i+1,end)==0){
+				addEnd(&string,&capa,&pos,sici->subst);
+				i+=1;
+				continue;
+			}
+			char tmp[3]={'\x02',*(c+i),'\0'};
+			addEnd(&string,&capa,&pos,tmp);
 			i+=1;
 			continue;
 		}
@@ -671,6 +708,15 @@ lastSep(const char* c){
 	for(char* i=c;*i;){
 		if(isBreak(*i)==1){
 			sep=i;
+			if(isOperator(*i)
+			  && *(i+1)
+			  && *(i+1)!=' '
+			  && *(i+1)!='\t'
+			  && *(i+1)!=OCMA
+			  && *(i+1)!='\\'){
+				i++;
+				sep=i;
+			}
 		}
 		i++;
 	}
@@ -815,7 +861,6 @@ buildBreaks(void){
 	*(splitt+a++)=' ';
 	*(splitt+a++)='\t';
 	*(splitt+a++)='\n';
-	*(splitt+a++)=OCMA;
 	*(splitt+a++)='\\';
 	for(int i=0;i< ops_s;){
 		if((*(ops+i)).type=='s'
