@@ -8,7 +8,7 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.2(1)-supcom"
+	#define VERSION "coma-1.3(2)-argcc"
 
 //	#define TEST
 	#define PRE
@@ -1179,8 +1179,23 @@ comaRun(char* p){
 			p+=2;
 			continue;
 		}
-		if(strncmp(p,"-f=",3)==0){
-			char* end=p+3;
+		if((strncmp(p,"-f",2)==0)
+		  && ((*(p+2)=='=')
+		  || (*(p+2)==' ')
+		  || (*(p+2)=='\t')
+		  || (*(p+2)=='\0'))){
+			char* arg;
+			if(*(p+2)=='='){
+				arg=p+3;
+			}
+			else{
+				arg=p+2;
+				while((*arg==' ')
+				     || (*arg=='\t')){
+					arg++;
+				}
+			}
+			char* end=arg;
 			while(*end){
 				if(*end==','){
 					char* q=end+1;
@@ -1197,27 +1212,42 @@ comaRun(char* p){
 			}
 			char saved=*end;
 			*end='\0';
-			comaLambda(p+3);
+			comaLambda(arg);
 			*end=saved;
 			if(saved=='\0'){ break; }
 			p=end+1;
 			continue;
 		}
-		if(strncmp(p,"-d=",3)==0){
-			char* end=p;
+		if((strncmp(p,"-d",2)==0)
+		  && ((*(p+2)=='=')
+		  || (*(p+2)==' ')
+		  || (*(p+2)=='\t')
+		  || (*(p+2)=='\0'))){
+			char* arg;
+			if(*(p+2)=='='){
+				arg=p+3;
+			}
+			else{
+				arg=p+2;
+				while((*arg==' ')
+				     || (*arg=='\t')){
+					arg++;
+				}
+			}
+			char* end=arg;
 			while((*end)
 			     && (*end!=' ')
-			     && *end!='\t'){
+			     && (*end!='\t')){
 				end++;
 			}
 			char saved=*end;
 			*end='\0';
-			if((*(p+3) >='0')
-			  && (*(p+3)<= '9')){
-				rmOp(atoi(p+3));
+			if((*arg >='0')
+			  && (*arg<= '9')){
+				rmOp(atoi(arg));
 			}
 			else{
-				char p3p3[5]={*(p+3),'.','.','.','\0'};
+				char p3p3[5]={*arg,'.','.','.','\0'};
 				comaerr(6,p3p3);
 			}
 			*end=saved;
@@ -1411,16 +1441,55 @@ main(int argc,char** argv){
 		comaerr(7,NULL);
 	}
 	parseConf(cfgpath);
-	for(int i=1;i< argc;){		
+	if(!shell){
+		shell=strdup("/bin/sh");
+	}
+	for(int i=1;i< argc;){
 		char* a=*(argv+i);
-		if(strncmp(a,"-f=",3)==0){
-			comaLambda(a+3);
+		char* v;
+		if((strcmp(a,"-f")==0)
+		  || (strncmp(a,"-f=",3)==0)){
+			if(*(a+2)=='='){
+				v=a+3;
+			}
+			else{
+				i++;
+				if(i >=argc){ comaerr(4,a); }
+				v=*(argv+i);
+			}
+			comaLambda(v);
 			i++;
 			continue;
 		}
-		if(strncmp(a,"-c=",3)==0){
+		if((strcmp(a,"-c")==0)
+		  || (strncmp(a,"-c=",3)==0)){
+			if(*(a+2)=='='){
+				v=a+3;
+			}
+			else{
+				i++;
+				if(i >=argc){
+					comaerr(4,a);
+				}
+				v=*(argv+i);
+			}
+			execCoc(v);
+			return 0;
+		}
+		if((strcmp(a,"-C")==0)
+		  || (strncmp(a,"-C=",3)==0)){
+			if(*(a+2)=='='){
+				v=a+3;
+			}
+			else{
+				i++;
+				if(i >=argc){
+				comaerr(4,a);
+				}
+				v=*(argv+i);
+			}
 			comac=1;
-			run05(a+3);
+			run05(v);
 			return 0;
 		}
 		if(strcmp(a,"-v")==0){
@@ -1431,12 +1500,21 @@ main(int argc,char** argv){
 			printOps();
 			return 0;
 		}
-		if(strncmp(a,"-d=",3)==0){
-			if((*(a+3)< '0')
-			  || (*(a+3) >'9')){
+		if((strcmp(a,"-d")==0)
+		  || (strncmp(a,"-d=",3)==0)){
+			if(*(a+2)=='='){
+				v=a+3;
+			}
+			else{
+				i++;
+				if(i >=argc){ comaerr(4,a); }
+				v=*(argv+i);
+			}
+			if((*v< '0')
+			  || (*v >'9')){
 				comaerr(4,a);
 			}
-			rmOp(atoi(a+3));
+			rmOp(atoi(v));
 			i++;
 			continue;
 		}
@@ -1450,10 +1528,6 @@ main(int argc,char** argv){
 	}
 	if(!ps1){
 		ps1=strdup("/bin/sh < coma < ");
-	}
-
-	if(!shell){
-		shell=strdup("/bin/sh");
 	}
 
 	buildBreaks();
