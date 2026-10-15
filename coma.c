@@ -8,7 +8,7 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.3(2)-argcc"
+	#define VERSION "coma-1.4(1)-termioshnt"
 
 //	#define TEST
 	#define PRE
@@ -54,7 +54,7 @@ void
 incr(int* ij,int a){ *ij+=a; }
 
 void
-versionIs(void){ printf("coma %s\n",VERSION); }
+versionIs(void){ printf("%s\n",VERSION); }
 
 typedef struct{
 
@@ -1027,6 +1027,9 @@ execCommand(char* c){
 
 	int status;
 	waitpid(pid,&status,0);
+	if(savetio){
+		tcsetattr(STDIN_FILENO,TCSANOW,&termiossv);
+	}
 	char patha[PATH_MAX+2];
 	ssize_t readsum=0;
 	struct pollfd pfd={

@@ -2,6 +2,8 @@
 
 ![coma](n.png)
 
+coma write-only interactive shell preprocessor
+
 dependencies:
 - libedit (editline)
 - libbsd (only if linux)
