@@ -8,7 +8,7 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.4(1)-termioshnt"
+	#define VERSION "coma-1.5(2)-rmuseless"
 
 //	#define TEST
 	#define PRE
@@ -49,9 +49,6 @@ volatile static sigjmp_buf jmp;
 
 void
 nop(void){}
-
-void
-incr(int* ij,int a){ *ij+=a; }
 
 void
 versionIs(void){ printf("%s\n",VERSION); }
@@ -96,14 +93,6 @@ historySave(void){
 		write_history(comahistory);
 	}
 }
-
-//void
-//arcList(char** u1,int u2,int u3){
-//
-//	(void)u1;
-//	(void)u2;
-//	(void)u3;
-//}
 
 void
 printOps(void){
