@@ -8,9 +8,9 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.5(2)-rmuseless"
+	#define VERSION "coma-1.6(8)-gsegsupfix"
 
-//	#define TEST
+	#define TEST
 	#define PRE
 	#define WCOLORS
 	#define WUTF8
@@ -63,7 +63,7 @@ typedef struct{
 }op;
 
 #ifdef PRE
-char* mkStrD(char* c);char* iterMkStrD(char* c);void mkStrG(char* c);char* mkString(char* c);char* cTypeInflate(char* s,op* ctype);char* whatAffix(char mod);char* mergeAffix(char* ogrizok);char* findSep(char* p,int* seplen);void mkTypeCsegment_t2_1(char* full);void doRepeat(char* cdr,op* ctype);void run05(char* line);
+char* mkStrD(char* c);char* iterMkStrD(char* c);char* mkStrG(char* c);char* mkString(char* c);char* cTypeInflate(char* s,op* ctype);char* whatAffix(char mod);char* mergeAffix(char* ogrizok);char* findSep(char* p,int* seplen);void mkTypeCsegment_t2_1(char* full);void doRepeat(char* cdr,op* ctype);void run05(char* line);void mkStrDumbG_1_last(char* c);int isWhatever_n3att_tc(char* a,int* a1);
 #endif
 
 op* ops=NULL;
@@ -399,6 +399,7 @@ addEnd(char** end,int* capa,int* pos,char* c){
 	*end=realloc(*end,*capa);
 	memcpy(*end+*pos,c,len);
 	*pos+=len;
+	*(*end+*pos)='\0';
 }
 
 char*
@@ -417,7 +418,7 @@ strncatGlobal(op* o){
 	char* raw=strdup(o->subst);
 	if(raw==NULL){ return; }
 	if(strchr(raw,OCMA)){
-		mkStrG(raw);
+		mkStrDumbG_1_last(raw);
 	}
 	char* inflated=cTypeInflate(raw,isSeparator());
 	free(raw);
@@ -536,7 +537,8 @@ iterMkStrD(char* c){
 					j++;
 				}
 			}
-			if(!isc){
+			if((!isc)
+			  && !globb){
 				i+=2;
 				continue;
 			}
@@ -601,13 +603,32 @@ iterMkStrD(char* c){
 }
 
 void
-mkStrG(char* c){
+mkStrDumbG_1_last(char* c){
 
 	char* end=c+strlen(c);
 	char* mv=c;
 	char* w=c;
 
 	while(*mv){
+		if(isOperator(*mv)
+		  && (mv+1< end)
+		  && *(mv+1)=='\\'){
+			int isc=0;
+			if(mv >=c+1){
+				for(int j=0;j< ops_s;){
+					if((*(ops+j)).type=='c'
+					  && (*(ops+j)).action1==*(mv-1)){
+						isc=1;
+						break;
+					}
+					j++;
+				}
+			}
+			if(!isc){
+				mv+=2;
+				continue;
+			}
+		}
 		if(isOperator(*mv)
 		  && (mv+1< end)){
 			char c1=*(mv+1);
@@ -627,14 +648,104 @@ mkStrG(char* c){
 	*w='\0';
 }
 
+int
+isWhatever_n3att_tc(char* rn,int* sl){
+
+	*sl=0;
+	if(!*rn){ return 0; }
+	if(((*rn=='|')
+	  || (*rn=='&'))
+	  && (*(rn+1)==*rn)){
+		*sl=2;
+		return 1;
+	}
+	if((*rn=='|')
+	  || (*rn=='&')
+	  || (*rn==';')){
+		*sl=1;
+		return 1;
+	}
+	for(int i=0;i< ops_s;){
+		op* o=ops+i;
+		if(((*o).type=='c')
+		  && ((*o).action1)){
+			if((*o).action2){
+				if((*rn==(*o).action1)
+				  && (*(rn+1)==(*o).action2)){
+					*sl=2;
+					return 1;
+				}
+			}
+			else
+			if(*rn==(*o).action1){
+				*sl=1;
+				return 1;
+			}
+		}
+		i++;
+	}
+	return 0;
+}
+
+char*
+mkStrG(char* c){
+
+	char* out=malloc(1);
+	*out='\0';
+	int capa=1;
+	int pos=0;
+	char* p=c;
+	for(;;){
+		char* e=p;
+		int sl=0;
+		for(;;){
+			if(!*e){ break; }
+			if((*e==OCMA)
+			  && (*(e+1))){
+				int wl=0;
+				op* o=isgAction(*(e+1),*(e+2),&wl);
+				if((o!=NULL)
+				  && ((*o).type=='g')){
+					e+=1+wl;
+					continue;
+				}
+			}
+			if(isWhatever_n3att_tc(e,&sl)){ break; }
+			e++;
+		}
+		char save=*e;
+		*e='\0';
+		*prefix='\0';
+		*suffix='\0';
+		char* seg = strdup(p);
+		mkStrDumbG_1_last(seg);
+		addEnd(&out,&capa,&pos,prefix);
+		addEnd(&out,&capa,&pos,seg);
+		addEnd(&out,&capa,&pos,suffix);
+		free(seg);
+		*prefix='\0';
+		*suffix='\0';
+		*e=save;
+		if(!save){ return out; }
+		char sep[3]={'\0','\0','\0'};
+		for(int i=0;i< sl;){
+			*(sep+i)=*(e+i);
+			i++;
+		}
+		addEnd(&out,&capa,&pos,sep);
+		p=e+sl;
+	}
+}
+
 char*
 mkString(char* c){
 
 	char* mkD=mkStrD(c);
 	if(mkD!=NULL
 	  && globb){
-		mkStrG(mkD);
-	}
+		char* mkdstrg=mkStrG(mkD);
+		free(mkD);
+	}	mkD=mkdstrg;
 	return mkD;
 }
 
@@ -1163,12 +1274,16 @@ comaRun(char* p){
 			p+=2;
 			continue;
 		}
-		if(strncmp(p,"-v",2)==0
+		if((strncmp(p,"-v",2)==0
 		  && ((*(p+2)=='\0')
-		  || (*(p+2)==' ')
-		  || (*(p+2)=='\t'))){
+		   || (*(p+2)==' ')
+		   || (*(p+2)=='\t')))
+		   || (strncmp(p,"--version",9)==0
+		  && ((*(p+9)=='\0')
+		   || (*(p+9)==' ')
+		   || (*(p+9)=='\t')))){
 			versionIs();
-			p+=2;
+			p+=(*(p+1)=='-')? 9:2;
 			continue;
 		}
 		if((strncmp(p,"-f",2)==0)
@@ -1383,7 +1498,9 @@ run05(char* line){
 	if(inflated==NULL){ return; }
 
 	if(globb){
-		mkStrG(inflated);
+		char* imsg=mkStrG(inflated);
+		free(inflated);
+		inflated=imsg;
 	}
 	char* full=mergeAffix(inflated);
 	free(inflated);
@@ -1484,7 +1601,8 @@ main(int argc,char** argv){
 			run05(v);
 			return 0;
 		}
-		if(strcmp(a,"-v")==0){
+		if((strcmp(a,"-v")==0)
+		  || strcmp(a,"--version")==0){
 			versionIs();
 			return 0;
 		}
