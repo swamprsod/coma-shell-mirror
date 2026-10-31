@@ -8,9 +8,9 @@
 	#define OCMA '%'
 	#define COMA_EL_KEY "bind -s \"M- \" \"%\""
 	#define ITA 100
-	#define VERSION "coma-1.6(8)-gsegsupfix"
+	#define VERSION "coma-1.7(1)-dumbug"
 
-	#define TEST
+//	#define TEST
 	#define PRE
 	#define WCOLORS
 	#define WUTF8
@@ -526,23 +526,11 @@ iterMkStrD(char* c){
 		if(isOperator(*(c+i))
 		  && (i+1< len)
 		  && *(c+i+1)=='\\'){
-			int isc=0;
-			if(i>=1){
-				for(int j=0;j< ops_s;){
-					if((*(ops+j)).type=='c'
-					  && (*(ops+j)).action1==*(c+i-1)){
-						isc=1;
-						break;
-					}
-					j++;
-				}
-			}
-			if((!isc)
-			  && !globb){
-				i+=2;
-				continue;
-			}
-		}		
+			char tmp[3]={OCMA,'\\','\0'};
+			addEnd(&string,&capa,&pos,tmp);
+			i+=2;
+			continue;
+		}
 		if(isOperator(*(c+i))
 		  && (i+1< len)){
 			char c1=*(c+i+1);
@@ -613,21 +601,9 @@ mkStrDumbG_1_last(char* c){
 		if(isOperator(*mv)
 		  && (mv+1< end)
 		  && *(mv+1)=='\\'){
-			int isc=0;
-			if(mv >=c+1){
-				for(int j=0;j< ops_s;){
-					if((*(ops+j)).type=='c'
-					  && (*(ops+j)).action1==*(mv-1)){
-						isc=1;
-						break;
-					}
-					j++;
-				}
-			}
-			if(!isc){
-				mv+=2;
-				continue;
-			}
+			*w++=*mv++;
+			*w++=*mv++;
+			continue;
 		}
 		if(isOperator(*mv)
 		  && (mv+1< end)){
@@ -745,7 +721,8 @@ mkString(char* c){
 	  && globb){
 		char* mkdstrg=mkStrG(mkD);
 		free(mkD);
-	}	mkD=mkdstrg;
+		mkD=mkdstrg;
+	}
 	return mkD;
 }
 
